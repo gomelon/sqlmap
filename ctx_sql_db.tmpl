@@ -1,5 +1,5 @@
-{{range $iface := interfaces|filterByMeta "sql:table"}}
-    {{$tableMeta := objectMeta $iface "sql:table"}}
+{{range $iface := interfaces|filterByMeta "+sqlmap.Mapper"}}
+    {{$tableMeta := objectMeta $iface "+sqlmap.Mapper"}}
 
     {{$decorator := print $iface.Name "SQLImpl"}}
     var _ {{typeString $iface.Type}} = &{{$decorator}}{}
@@ -19,9 +19,9 @@
         {{$methodTplParams:=dict "decorator" $decorator "method" $method "tableMeta" $tableMeta}}
 
         {{$queryType := queryType $method}}
-        {{if eq $queryType "sql:select"}}
+        {{if eq $queryType "+sqlmap.Select"}}
             {{template "select" $methodTplParams}}
-        {{else if eq $queryType "sql:delete"}}
+        {{else if eq $queryType "+sqlmap.Delete"}}
             {{template "delete" $methodTplParams}}
         {{end}}
     {{end}}

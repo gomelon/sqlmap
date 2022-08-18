@@ -22,30 +22,55 @@ func DefaultPkgGenFactory(defaultEngine engine.Engine) meta.PkgGenFactory {
 }
 
 const (
-	MetaSqlTable  = "sql:table"
-	MetaSqlSelect = "sql:select"
-	MetaSqlInsert = "sql:insert"
-	MetaSqlUpdate = "sql:update"
-	MetaSqlDelete = "sql:delete"
-	MetaSqlNone   = "sql:none"
+	MetaMapper = "+sqlmap.Mapper"
+	MetaSelect = "+sqlmap.Select"
+	MetaInsert = "+sqlmap.Insert"
+	MetaUpdate = "+sqlmap.Update"
+	MetaDelete = "+sqlmap.Delete"
+	MetaNone   = "+sqlmap.None"
 )
 
 var (
-	MetaNames = []string{MetaSqlSelect, MetaSqlInsert, MetaSqlUpdate, MetaSqlDelete, MetaSqlNone}
+	MetaNames = []string{MetaMapper, MetaSelect, MetaInsert, MetaUpdate, MetaDelete, MetaNone}
 )
 
-func TableName(m *meta.Meta) string {
-	return m.Property("name")
+type Mapper struct {
+	Table   string
+	Dialect string
 }
 
-func TableDialect(m *meta.Meta) string {
-	return m.Property("dialect")
+type Select struct {
+	Query  string
+	Master bool
+}
+
+type Insert struct {
+	Query string
+}
+
+type Update struct {
+	Query string
+}
+
+type Delete struct {
+	Query string
+}
+
+type None struct {
+}
+
+func Table(m *meta.Meta) string {
+	return m.Property("Table")
+}
+
+func Dialect(m *meta.Meta) string {
+	return m.Property("Dialect")
 }
 
 func Query(m *meta.Meta) string {
-	return m.Property("query")
+	return m.Property("Query")
 }
 
 func SetQuery(m *meta.Meta, query string) {
-	m.SetProperty("query", query)
+	m.SetProperty("Query", query)
 }

@@ -9,7 +9,7 @@ import (
 	"github.com/gomelon/melon/data/query"
 	"github.com/gomelon/melon/third_party/sqlx"
 	"github.com/gomelon/meta"
-	"github.com/gomelon/metas/msql/parser"
+	"github.com/gomelon/sqlmap/parser"
 	"github.com/huandu/xstrings"
 	"go/types"
 	"strings"
@@ -61,28 +61,28 @@ func (f *functions) QueryType(method types.Object) (queryType string, err error)
 	}
 	switch subject {
 	case query.SubjectFind, query.SubjectCount, query.SubjectExists:
-		queryType = MetaSqlSelect
+		queryType = MetaSelect
 	case query.SubjectDelete:
-		queryType = MetaSqlDelete
+		queryType = MetaDelete
 	}
 	return
 }
 
 func (f *functions) SelectMeta(method types.Object, tableMeta *meta.Meta) (selectMeta *meta.Meta, err error) {
 	metaName, selectMetaGroup, err := f.subjectMeta(method)
-	if err != nil || (len(metaName) > 0 && metaName != MetaSqlSelect) {
+	if err != nil || (len(metaName) > 0 && metaName != MetaSelect) {
 		return
 	}
 
 	if selectMetaGroup == nil {
-		selectMeta = meta.New(MetaSqlSelect)
+		selectMeta = meta.New(MetaSelect)
 	} else {
 		originSelectMeta := selectMetaGroup[0]
 		if len(Query(originSelectMeta)) > 0 {
 			selectMeta = originSelectMeta
 			return
 		}
-		selectMeta = meta.New(MetaSqlSelect)
+		selectMeta = meta.New(MetaSelect)
 		selectMeta.SetProperties(originSelectMeta.Properties())
 	}
 
@@ -100,7 +100,7 @@ func (f *functions) SelectMeta(method types.Object, tableMeta *meta.Meta) (selec
 		return
 	}
 
-	parsedQuery = parsedQuery.With(query.WithTable(query.NewTable(TableName(tableMeta))))
+	parsedQuery = parsedQuery.With(query.WithTable(query.NewTable(Table(tableMeta))))
 	if parsedQuery.FilterGroup() != nil {
 		toArgMethodParams := f.methodParamsWithoutCtx(method)
 		namedArgs := make([]string, 0, len(toArgMethodParams))
@@ -166,19 +166,19 @@ func (f *functions) RewriteSelectStmt(method types.Object, table *meta.Meta, sel
 
 func (f *functions) DeleteMeta(method types.Object, tableMeta *meta.Meta) (deleteMeta *meta.Meta, err error) {
 	directive, deleteMetaGroup, err := f.subjectMeta(method)
-	if err != nil || (len(directive) > 0 && directive != MetaSqlDelete) {
+	if err != nil || (len(directive) > 0 && directive != MetaDelete) {
 		return
 	}
 
 	if deleteMetaGroup == nil {
-		deleteMeta = meta.New(MetaSqlDelete)
+		deleteMeta = meta.New(MetaDelete)
 	} else {
 		originDeleteMeta := deleteMetaGroup[0]
 		if len(Query(originDeleteMeta)) > 0 {
 			deleteMeta = originDeleteMeta
 			return
 		}
-		deleteMeta = meta.New(MetaSqlDelete)
+		deleteMeta = meta.New(MetaDelete)
 		deleteMeta.SetProperties(originDeleteMeta.Properties())
 	}
 
@@ -193,7 +193,7 @@ func (f *functions) DeleteMeta(method types.Object, tableMeta *meta.Meta) (delet
 		return
 	}
 
-	parsedQuery = parsedQuery.With(query.WithTable(query.NewTable(TableName(tableMeta))))
+	parsedQuery = parsedQuery.With(query.WithTable(query.NewTable(Table(tableMeta))))
 	if parsedQuery.FilterGroup() != nil {
 		toArgMethodParams := f.methodParamsWithoutCtx(method)
 		namedArgs := make([]string, 0, len(toArgMethodParams))
@@ -371,7 +371,7 @@ func (f *functions) connectTableQualifier(tableQualifier, column string) string 
 }
 
 func (f *functions) engine(table *meta.Meta) engine.Engine {
-	dialect := TableDialect(table)
+	dialect := Dialect(table)
 	if len(dialect) == 0 || dialect == f.defaultEngine.Dialect() {
 		return f.defaultEngine
 	}
@@ -382,7 +382,7 @@ func (f *functions) engine(table *meta.Meta) engine.Engine {
 func (f *functions) translateQuery(tableMeta *meta.Meta, q *query.Query) (sql string, err error) {
 	dialectEngine := f.engine(tableMeta)
 	if dialectEngine == nil {
-		err = fmt.Errorf("unsupported dialect,dialect=%s", TableDialect(tableMeta))
+		err = fmt.Errorf("unsupported dialect,dialect=%s", Dialect(tableMeta))
 		return
 	}
 	translator := query.NewRDBTranslator(dialectEngine)

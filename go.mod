@@ -5,7 +5,6 @@ go 1.18
 require (
 	github.com/gomelon/melon v0.0.0-20220727160918-1c7340a0a7bc
 	github.com/gomelon/meta v0.0.0-20220816163404-257885003c26
-	github.com/gomelon/metas/msql v0.0.0-20220816163404-d9e7bafc6289
 	github.com/huandu/xstrings v1.3.2
 	github.com/xwb1989/sqlparser v0.0.0-20180606152119-120387863bf2
 )
