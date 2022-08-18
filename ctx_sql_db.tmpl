@@ -1,0 +1,137 @@
+{{range $iface := interfaces|filterByMeta "sql:table"}}
+    {{$tableMeta := objectMeta $iface "sql:table"}}
+
+    {{$decorator := print $iface.Name "SQLImpl"}}
+    var _ {{typeString $iface.Type}} = &{{$decorator}}{}
+    {{$structTplParams:=dict "iface" $iface "tableMeta" $tableMeta "decorator" $decorator}}
+    {{template "decorator_struct" $structTplParams}}
+
+    {{range $method := $iface|methods}}
+        {{$hasErrorResult := $method|hasErrorResult}}
+        {{if not $hasErrorResult}}
+            {{printf "\n\tunsupported method has none error result,method=%s" $method.String|fail}}
+        {{end}}
+
+        {{if not ($method|firstParam|objectType|assignableToCtx)}}
+            {{printf "\n\tunsupported method has none context.Context param,method=%s" $method.String|fail}}
+        {{end}}
+
+        {{$methodTplParams:=dict "decorator" $decorator "method" $method "tableMeta" $tableMeta}}
+
+        {{$queryType := queryType $method}}
+        {{if eq $queryType "sql:select"}}
+            {{template "select" $methodTplParams}}
+        {{else if eq $queryType "sql:delete"}}
+            {{template "delete" $methodTplParams}}
+        {{end}}
+    {{end}}
+{{end}}
+
+{{define "decorator_struct"}}
+    {{$sqlPkg := import "database/sql"}}
+    {{$melonPkg := import "github.com/gomelon/melon/data"}}
+
+    {{/*@formatter:off*/}}
+//meta:data source={{.iface.Id}} tags={{dialect .tableMeta}},dao,struct
+type {{.decorator}} struct {
+    _tm *{{$melonPkg}}.SQLTXManager
+}
+
+//New{{.decorator}} {{.decorator}} provider
+//wire:provider
+//meta:data source={{.iface.Id}} tags={{dialect .tableMeta}},dao,provider
+func New{{.decorator}}(_tm *{{$melonPkg}}.SQLTXManager) *{{.decorator}}{
+    return &{{.decorator}}{
+        _tm: _tm,
+    }
+}
+    {{/*@formatter:on*/}}
+{{end}}
+
+{{define "select"}}
+    {{$selectMeta := selectMeta .method .tableMeta}}
+    {{$queryResultType := .method|firstResult|objectType}}
+    {{$queryResultTypeName := $queryResultType|typeName}}
+
+    {{$sql := rewriteSelectStmt .method .tableMeta $selectMeta}}
+    {{$methodTplParams := dict "decorator" .decorator "method" .method "tableMeta" .tableMeta "selectMeta" $selectMeta
+    "sql" $sql "queryResultType" $queryResultType "queryResultTypeName" $queryResultTypeName }}
+
+    {{if or (eq $queryResultTypeName "Pointer") (eq $queryResultTypeName "Basic") }}
+        {{template "select_return_single_err" $methodTplParams}}
+    {{else if eq $queryResultTypeName "Slice"}}
+        {{template "select_return_slice_err" $methodTplParams}}
+    {{end}}
+{{end}}
+
+{{define "select_return_single_err"}}
+    {{/*@formatter:off*/}}
+func (_impl *{{.decorator}}) {{.method|declare}}{
+    _sql := {{multipleLines .sql}}
+    _rows, _err := _impl._tm.OriginTXOrDB({{.method|firstParam|name}}).
+    Query(_sql, {{queryArgs .method .tableMeta .selectMeta}})
+
+    var _item {{.queryResultType|typeString}}
+    if _err != nil {
+        return _item, _err
+    }
+
+    defer _rows.Close()
+
+    if !_rows.Next() {
+        return _item, _rows.Err()
+    }
+
+    _item = {{.queryResultType|initType}}
+    _err = _rows.Scan({{scanFields .method .tableMeta .sql "_item"}})
+    return _item, _err
+}
+    {{/*@formatter:on*/}}
+{{end}}
+
+{{define "select_return_slice_err"}}
+    {{/*@formatter:off*/}}
+func (_impl *{{.decorator}}) {{.method|declare}}{
+    _sql := {{multipleLines .sql}}
+    _rows, _err := _impl._tm.OriginTXOrDB({{.method|firstParam|name}}).
+        Query(_sql, {{queryArgs .method .tableMeta .selectMeta}})
+
+    var _items {{.queryResultType|typeString}}
+    if _err != nil {
+        return _items, _err
+    }
+
+    defer _rows.Close()
+
+    if !_rows.Next() {
+        return _items, _rows.Err()
+    }
+
+    for _rows.Next() {
+        _item := {{.queryResultType.Elem|initType}}
+        _err = _rows.Scan({{scanFields .method .tableMeta .sql "_item"}})
+            if _err != nil {
+            return _items, _err
+        }
+        _items = append(_items, _item)
+    }
+    return _items, nil
+}
+    {{/*@formatter:on*/}}
+{{end}}
+
+
+{{define "delete"}}
+    {{$deleteMeta := deleteMeta .method .tableMeta}}
+    {{/*@formatter:off*/}}
+func (_impl *{{.decorator}}) {{.method|declare}}{
+    _sql := {{rewriteDeleteStmt .method .tableMeta $deleteMeta|multipleLines}}
+    _result, err := _impl._tm.OriginTXOrDB({{.method|firstParam|name}}).
+        Exec(_sql, {{queryArgs .method .tableMeta $deleteMeta}})
+    if err != nil {
+        return 0, err
+    }
+    return _result.RowsAffected()
+}
+    {{/*@formatter:on*/}}
+{{end}}
