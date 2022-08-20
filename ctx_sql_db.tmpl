@@ -38,7 +38,7 @@ type {{.decorator}} struct {
 }
 
 //New{{.decorator}} {{.decorator}} provider
-//wire:provider
+//+autowire.Provider
 //meta:data source={{.iface.Id}} tags={{dialect .tableMeta}},dao,provider
 func New{{.decorator}}(_tm *{{$melonPkg}}.SQLTXManager) *{{.decorator}}{
     return &{{.decorator}}{

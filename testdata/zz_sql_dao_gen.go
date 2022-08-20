@@ -17,7 +17,7 @@ type UserDaoSQLImpl struct {
 }
 
 //NewUserDaoSQLImpl UserDaoSQLImpl provider
-//wire:provider
+//+autowire.Provider
 //meta:data source=UserDao tags=mysql,dao,provider
 func NewUserDaoSQLImpl(_tm *data.SQLTXManager) *UserDaoSQLImpl {
 	return &UserDaoSQLImpl{
