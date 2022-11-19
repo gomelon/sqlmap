@@ -1,9 +1,9 @@
-{{range $iface := interfaces|filterByMeta "+sqlmap.Mapper"}}
-    {{$tableMeta := objectMeta $iface "+sqlmap.Mapper"}}
+{{range $iface := interfaces|filterByMeta "sqlmap.Mapper"}}
+    {{$mapper := buildMapper $iface}}
 
     {{$decorator := print $iface.Name "SQLImpl"}}
     var _ {{typeString $iface.Type}} = &{{$decorator}}{}
-    {{$structTplParams:=dict "iface" $iface "tableMeta" $tableMeta "decorator" $decorator}}
+    {{$structTplParams:=dict "iface" $iface "mapper" $mapper "decorator" $decorator}}
     {{template "decorator_struct" $structTplParams}}
 
     {{range $method := $iface|methods}}
@@ -16,12 +16,12 @@
             {{printf "\n\tunsupported method has none context.Context param,method=%s" $method.String|fail}}
         {{end}}
 
-        {{$methodTplParams:=dict "decorator" $decorator "method" $method "tableMeta" $tableMeta}}
+        {{$methodTplParams:=dict "decorator" $decorator "method" $method "mapper" $mapper}}
 
         {{$queryType := queryType $method}}
-        {{if eq $queryType "+sqlmap.Select"}}
+        {{if eq $queryType "sqlmap.Select"}}
             {{template "select" $methodTplParams}}
-        {{else if eq $queryType "+sqlmap.Delete"}}
+        {{else if eq $queryType "sqlmap.Delete"}}
             {{template "delete" $methodTplParams}}
         {{end}}
     {{end}}
@@ -32,14 +32,14 @@
     {{$melonPkg := import "github.com/gomelon/melon/data"}}
 
     {{/*@formatter:off*/}}
-//meta:data source={{.iface.Id}} tags={{dialect .tableMeta}},dao,struct
+//meta:data source={{.iface.Id}} tags={{.mapper.Dialect}},dao,struct
 type {{.decorator}} struct {
     _tm *{{$melonPkg}}.SQLTXManager
 }
 
 //New{{.decorator}} {{.decorator}} provider
 //+autowire.Provider
-//meta:data source={{.iface.Id}} tags={{dialect .tableMeta}},dao,provider
+//meta:data source={{.iface.Id}} tags={{dialect .mapper}},dao,provider
 func New{{.decorator}}(_tm *{{$melonPkg}}.SQLTXManager) *{{.decorator}}{
     return &{{.decorator}}{
         _tm: _tm,
@@ -49,12 +49,12 @@ func New{{.decorator}}(_tm *{{$melonPkg}}.SQLTXManager) *{{.decorator}}{
 {{end}}
 
 {{define "select"}}
-    {{$selectMeta := selectMeta .method .tableMeta}}
+    {{$selectQuerier := buildSelect .method .mapper}}
     {{$queryResultType := .method|firstResult|objectType}}
     {{$queryResultTypeName := $queryResultType|typeName}}
 
-    {{$sql := rewriteSelectStmt .method .tableMeta $selectMeta}}
-    {{$methodTplParams := dict "decorator" .decorator "method" .method "tableMeta" .tableMeta "selectMeta" $selectMeta
+    {{$sql := rewriteSelectStmt .method .mapper $selectQuerier}}
+    {{$methodTplParams := dict "decorator" .decorator "method" .method "mapper" .mapper "selectQuerier" $selectQuerier
     "sql" $sql "queryResultType" $queryResultType "queryResultTypeName" $queryResultTypeName }}
 
     {{if or (eq $queryResultTypeName "Pointer") (eq $queryResultTypeName "Basic") }}
@@ -69,7 +69,7 @@ func New{{.decorator}}(_tm *{{$melonPkg}}.SQLTXManager) *{{.decorator}}{
 func (_impl *{{.decorator}}) {{.method|declare}}{
     _sql := {{multipleLines .sql}}
     _rows, _err := _impl._tm.OriginTXOrDB({{.method|firstParam|name}}).
-    Query(_sql, {{queryArgs .method .tableMeta .selectMeta}})
+    Query(_sql, {{queryArgs .method .mapper .selectQuerier}})
 
     var _item {{.queryResultType|typeString}}
     if _err != nil {
@@ -83,7 +83,7 @@ func (_impl *{{.decorator}}) {{.method|declare}}{
     }
 
     _item = {{.queryResultType|initType}}
-    _err = _rows.Scan({{scanFields .method .tableMeta .sql "_item"}})
+    _err = _rows.Scan({{scanFields .method .mapper .sql "_item"}})
     return _item, _err
 }
     {{/*@formatter:on*/}}
@@ -94,7 +94,7 @@ func (_impl *{{.decorator}}) {{.method|declare}}{
 func (_impl *{{.decorator}}) {{.method|declare}}{
     _sql := {{multipleLines .sql}}
     _rows, _err := _impl._tm.OriginTXOrDB({{.method|firstParam|name}}).
-        Query(_sql, {{queryArgs .method .tableMeta .selectMeta}})
+        Query(_sql, {{queryArgs .method .mapper .selectQuerier}})
 
     var _items {{.queryResultType|typeString}}
     if _err != nil {
@@ -109,7 +109,7 @@ func (_impl *{{.decorator}}) {{.method|declare}}{
 
     for _rows.Next() {
         _item := {{.queryResultType.Elem|initType}}
-        _err = _rows.Scan({{scanFields .method .tableMeta .sql "_item"}})
+        _err = _rows.Scan({{scanFields .method .mapper .sql "_item"}})
             if _err != nil {
             return _items, _err
         }
@@ -122,12 +122,12 @@ func (_impl *{{.decorator}}) {{.method|declare}}{
 
 
 {{define "delete"}}
-    {{$deleteMeta := deleteMeta .method .tableMeta}}
+    {{$deleteQuerier := buildDelete .method .mapper}}
     {{/*@formatter:off*/}}
 func (_impl *{{.decorator}}) {{.method|declare}}{
-    _sql := {{rewriteDeleteStmt .method .tableMeta $deleteMeta|multipleLines}}
+    _sql := {{rewriteDeleteStmt .method .mapper $deleteQuerier|multipleLines}}
     _result, err := _impl._tm.OriginTXOrDB({{.method|firstParam|name}}).
-        Exec(_sql, {{queryArgs .method .tableMeta $deleteMeta}})
+        Exec(_sql, {{queryArgs .method .mapper $deleteQuerier}})
     if err != nil {
         return 0, err
     }

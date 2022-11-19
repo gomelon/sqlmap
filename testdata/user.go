@@ -18,7 +18,7 @@ type User struct {
 }
 
 //UserDao
-//+sqlmap.Mapper Table=`user` Dialect="mysql"
+//+sqlmap.Mapper Table="user" Dialect="mysql"
 type UserDao interface {
 	FindById(ctx context.Context, id int64) (*User, error)
 

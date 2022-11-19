@@ -34,15 +34,23 @@ func NewFunctions(gen *meta.TmplPkgGen, defaultEngine engine.Engine) *functions 
 
 func (f *functions) FuncMap() template.FuncMap {
 	return map[string]any{
+		"buildMapper":       f.BuildMapper,
 		"queryType":         f.QueryType,
-		"selectMeta":        f.SelectMeta,
+		"buildSelect":       f.BuildSelect,
+		"buildDelete":       f.BuildDelete,
 		"rewriteSelectStmt": f.RewriteSelectStmt,
-		"scanFields":        f.ScanFields,
-		"deleteMeta":        f.DeleteMeta,
 		"rewriteDeleteStmt": f.RewriteDeleteStmt,
+		"scanFields":        f.ScanFields,
 		"queryArgs":         f.QueryArgs,
 		"dialect":           f.Dialect,
 	}
+}
+
+func (f *functions) BuildMapper(obj types.Object) (*Mapper, error) {
+	objectMeta := f.metaParser.ObjectMeta(obj, MetaMapper)
+	mapper := &Mapper{}
+	err := objectMeta.MapTo(mapper)
+	return mapper, err
 }
 
 func (f *functions) QueryType(method types.Object) (queryType string, err error) {
@@ -68,22 +76,21 @@ func (f *functions) QueryType(method types.Object) (queryType string, err error)
 	return
 }
 
-func (f *functions) SelectMeta(method types.Object, tableMeta *meta.Meta) (selectMeta *meta.Meta, err error) {
+func (f *functions) BuildSelect(method types.Object, mapper *Mapper) (selectMeta *Select, err error) {
 	metaName, selectMetaGroup, err := f.subjectMeta(method)
-	if err != nil || (len(metaName) > 0 && metaName != MetaSelect) {
+	if err != nil {
 		return
 	}
 
-	if selectMetaGroup == nil {
-		selectMeta = meta.New(MetaSelect)
-	} else {
-		originSelectMeta := selectMetaGroup[0]
-		if len(Query(originSelectMeta)) > 0 {
-			selectMeta = originSelectMeta
-			return
-		}
-		selectMeta = meta.New(MetaSelect)
-		selectMeta.SetProperties(originSelectMeta.Properties())
+	if metaName != "" && metaName != MetaSelect {
+		err = fmt.Errorf("expected %s but %s,method=%s", MetaSelect, metaName, method.String())
+		return
+	}
+
+	selectMeta = &Select{}
+	if selectMetaGroup != nil && len(selectMetaGroup) > 0 {
+		err = selectMetaGroup[0].MapTo(selectMeta)
+		return
 	}
 
 	parsedQuery, err := f.ruleParser.Parse(method.Name())
@@ -100,7 +107,7 @@ func (f *functions) SelectMeta(method types.Object, tableMeta *meta.Meta) (selec
 		return
 	}
 
-	parsedQuery = parsedQuery.With(query.WithTable(query.NewTable(Table(tableMeta))))
+	parsedQuery = parsedQuery.With(query.WithTable(query.NewTable(mapper.Table)))
 	if parsedQuery.FilterGroup() != nil {
 		toArgMethodParams := f.methodParamsWithoutCtx(method)
 		namedArgs := make([]string, 0, len(toArgMethodParams))
@@ -113,19 +120,19 @@ func (f *functions) SelectMeta(method types.Object, tableMeta *meta.Meta) (selec
 		}
 	}
 
-	sql, err := f.translateQuery(tableMeta, parsedQuery)
+	sql, err := f.translateQuery(mapper, parsedQuery)
 	if err != nil {
 		return
 	}
 
-	SetQuery(selectMeta, sql)
+	selectMeta.Query = sql
 	return
 }
 
-func (f *functions) RewriteSelectStmt(method types.Object, table *meta.Meta, sel *meta.Meta) (query string, err error) {
-	dialect := f.Dialect(table)
+func (f *functions) RewriteSelectStmt(method types.Object, mapper *Mapper, sel *Select) (query string, err error) {
+	dialect := f.Dialect(mapper)
 
-	originQuery := Query(sel)
+	originQuery := sel.Query
 	query, _, err = f.compileNamedQuery(originQuery, dialect)
 
 	sqlParser, err := parser.New(dialect, query)
@@ -164,22 +171,21 @@ func (f *functions) RewriteSelectStmt(method types.Object, table *meta.Meta, sel
 	return
 }
 
-func (f *functions) DeleteMeta(method types.Object, tableMeta *meta.Meta) (deleteMeta *meta.Meta, err error) {
-	directive, deleteMetaGroup, err := f.subjectMeta(method)
-	if err != nil || (len(directive) > 0 && directive != MetaDelete) {
+func (f *functions) BuildDelete(method types.Object, mapper *Mapper) (deleteMeta *Delete, err error) {
+	metaName, deleteMetaGroup, err := f.subjectMeta(method)
+	if err != nil {
 		return
 	}
 
-	if deleteMetaGroup == nil {
-		deleteMeta = meta.New(MetaDelete)
-	} else {
-		originDeleteMeta := deleteMetaGroup[0]
-		if len(Query(originDeleteMeta)) > 0 {
-			deleteMeta = originDeleteMeta
-			return
-		}
-		deleteMeta = meta.New(MetaDelete)
-		deleteMeta.SetProperties(originDeleteMeta.Properties())
+	if len(metaName) > 0 && metaName != MetaDelete {
+		err = fmt.Errorf("expected %s but %s,method=%s", MetaDelete, metaName, method.String())
+		return
+	}
+
+	deleteMeta = &Delete{}
+	if deleteMetaGroup != nil && len(deleteMetaGroup) > 0 {
+		err = deleteMetaGroup[0].MapTo(deleteMeta)
+		return
 	}
 
 	parsedQuery, err := f.ruleParser.Parse(method.Name())
@@ -193,7 +199,7 @@ func (f *functions) DeleteMeta(method types.Object, tableMeta *meta.Meta) (delet
 		return
 	}
 
-	parsedQuery = parsedQuery.With(query.WithTable(query.NewTable(Table(tableMeta))))
+	parsedQuery = parsedQuery.With(query.WithTable(query.NewTable(mapper.Table)))
 	if parsedQuery.FilterGroup() != nil {
 		toArgMethodParams := f.methodParamsWithoutCtx(method)
 		namedArgs := make([]string, 0, len(toArgMethodParams))
@@ -206,23 +212,23 @@ func (f *functions) DeleteMeta(method types.Object, tableMeta *meta.Meta) (delet
 		}
 	}
 
-	sql, err := f.translateQuery(tableMeta, parsedQuery)
+	sql, err := f.translateQuery(mapper, parsedQuery)
 	if err != nil {
 		return
 	}
 
-	SetQuery(deleteMeta, sql)
+	deleteMeta.Query = sql
 	return
 }
 
-func (f *functions) RewriteDeleteStmt(_ types.Object, table *meta.Meta, queryMeta *meta.Meta) (query string, err error) {
-	dialect := f.Dialect(table)
-	query, _, err = f.compileNamedQuery(Query(queryMeta), dialect)
+func (f *functions) RewriteDeleteStmt(_ types.Object, mapper *Mapper, deleteMeta *Delete) (query string, err error) {
+	dialect := f.Dialect(mapper)
+	query, _, err = f.compileNamedQuery(deleteMeta.Query, dialect)
 	return
 }
 
-func (f *functions) ScanFields(method types.Object, table *meta.Meta, sql string, item string) (string, error) {
-	dialect := f.Dialect(table)
+func (f *functions) ScanFields(method types.Object, mapper *Mapper, sql string, item string) (string, error) {
+	dialect := f.Dialect(mapper)
 
 	var err error
 
@@ -253,9 +259,9 @@ func (f *functions) ScanFields(method types.Object, table *meta.Meta, sql string
 	return result, nil
 }
 
-func (f *functions) QueryArgs(method types.Object, table *meta.Meta, queryMeta *meta.Meta) (nameArgsStr string, err error) {
-	dialect := f.Dialect(table)
-	originQuery := Query(queryMeta)
+func (f *functions) QueryArgs(method types.Object, mapper *Mapper, querier Querier) (nameArgsStr string, err error) {
+	dialect := f.Dialect(mapper)
+	originQuery := querier.GetQuery()
 	_, queryNames, err := f.compileNamedQuery(originQuery, dialect)
 	if err != nil {
 		return
@@ -274,8 +280,8 @@ func (f *functions) QueryArgs(method types.Object, table *meta.Meta, queryMeta *
 	return
 }
 
-func (f *functions) Dialect(table *meta.Meta) string {
-	return f.engine(table).Dialect()
+func (f *functions) Dialect(mapper *Mapper) string {
+	return f.engine(mapper).Dialect()
 }
 
 func (f *functions) positionArgsStr(toArgsMethodParams []types.Object) string {
@@ -370,8 +376,8 @@ func (f *functions) connectTableQualifier(tableQualifier, column string) string 
 	return tableQualifier + "." + column
 }
 
-func (f *functions) engine(table *meta.Meta) engine.Engine {
-	dialect := Dialect(table)
+func (f *functions) engine(mapper *Mapper) engine.Engine {
+	dialect := mapper.Dialect
 	if len(dialect) == 0 || dialect == f.defaultEngine.Dialect() {
 		return f.defaultEngine
 	}
@@ -379,10 +385,10 @@ func (f *functions) engine(table *meta.Meta) engine.Engine {
 	return nil
 }
 
-func (f *functions) translateQuery(tableMeta *meta.Meta, q *query.Query) (sql string, err error) {
-	dialectEngine := f.engine(tableMeta)
+func (f *functions) translateQuery(mapper *Mapper, q *query.Query) (sql string, err error) {
+	dialectEngine := f.engine(mapper)
 	if dialectEngine == nil {
-		err = fmt.Errorf("unsupported dialect,dialect=%s", Dialect(tableMeta))
+		err = fmt.Errorf("unsupported dialect,dialect=%s", mapper.Dialect)
 		return
 	}
 	translator := query.NewRDBTranslator(dialectEngine)
