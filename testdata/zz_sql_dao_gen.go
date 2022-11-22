@@ -183,8 +183,9 @@ func (_impl *UserDaoSQLImpl) FindByBirthdayGTE2(ctx context.Context, time time.T
 	return _items, nil
 }
 
-func (_impl *UserDaoSQLImpl) FindById(ctx context.Context, id int64) (*User, error) {
-	_sql := "SELECT id, name, gender, birthday, created_at FROM `user` WHERE (`id` = ?)"
+func (_impl *UserDaoSQLImpl) FindById(ctx context.Context,
+	id int64) (*User, error) {
+	_sql := "SELECT id, name FROM `user` WHERE (`id` = ?)"
 	_rows, _err := _impl._tm.OriginTXOrDB(ctx).
 		Query(_sql, id)
 
@@ -200,7 +201,7 @@ func (_impl *UserDaoSQLImpl) FindById(ctx context.Context, id int64) (*User, err
 	}
 
 	_item = &User{}
-	_err = _rows.Scan(&_item.Id, &_item.Name, &_item.Gender, &_item.Birthday, &_item.CreatedAt)
+	_err = _rows.Scan(&_item.Id, &_item.Name)
 	return _item, _err
 }
 
